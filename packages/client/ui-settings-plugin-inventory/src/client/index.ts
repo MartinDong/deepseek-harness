@@ -34,7 +34,22 @@ export function apply(ctx: ClientContext): void {
     }
     return result.value
   }
-  const injected = (): PluginInventorySettingsTabInjected => ({ list })
+  const setEnabled: PluginInventorySettingsTabInjected['setEnabled'] = async (entryId, enabled) => {
+    const result = await ctx.remote.pluginInventory.setEnabled(entryId, enabled)
+    if (!result.ok) {
+      // Surface the host reason (protected, container, loader failure) directly;
+      // the settings card shows this message on the failed row.
+      throw new Error(result.error.message)
+    }
+  }
+  const injected = (): PluginInventorySettingsTabInjected => {
+    const active = ctx.locale.getLocale().active
+    return {
+      list,
+      setEnabled,
+      language: active === 'en' ? 'en' : 'zh',
+    }
+  }
 
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
     name: 'settings.plugins.tab',

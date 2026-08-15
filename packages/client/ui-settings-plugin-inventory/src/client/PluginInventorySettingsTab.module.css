@@ -102,14 +102,17 @@
 .cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
+  align-content: start;
 }
 
 .card {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2);
@@ -120,6 +123,18 @@
 .card[data-open='true'] {
   border-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-shadow-lv1);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 10px;
+}
+
+.cardHead > .cardContent {
+  flex: 1;
+  min-width: 0;
 }
 
 .cardContent {
@@ -149,14 +164,35 @@
   outline-offset: -2px;
 }
 
+.cardLead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  align-items: flex-start;
+}
+
 .cardTitle {
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   font-size: 14px;
   line-height: 20px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cardFooter {
+  margin-top: auto;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding: 8px 14px 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .cardTrailing {
@@ -204,6 +240,91 @@
 .configTag[data-enabled='true'] {
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent);
   color: var(--dsw-alias-state-success-primary);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+/* On/off switch: a track with a sliding thumb whose position and color
+   encode the Live state. Kept compact so it never squeezes the card title. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.switchTrack {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 18px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  transition: background 140ms var(--ds-ease-in-out), border-color 140ms var(--ds-ease-in-out);
+}
+
+.switchThumb {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-tertiary);
+  transform: translateY(-50%);
+  transition: left 140ms var(--ds-ease-in-out), background 140ms var(--ds-ease-in-out);
+}
+
+.switch[data-enabled='true'] .switchTrack {
+  background: var(--dsw-alias-state-success-primary);
+  border-color: transparent;
+}
+
+.switch[data-enabled='true'] .switchThumb {
+  left: 17px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.switch:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.switch[data-busy='true'] .switchTrack {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+/* A failed toggle shown on its own stacked line so the plugin name in the
+   card head never gets squeezed out of view by the message. */
+.cardError {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 22%, transparent);
+  padding: 7px 14px 9px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.cardErrorReason {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .chevron {

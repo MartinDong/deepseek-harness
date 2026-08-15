@@ -13,10 +13,15 @@ afterEach(cleanup)
 type Snapshot = Awaited<ReturnType<PluginInventorySettingsTabInjected['list']>>
 const t = ((key: PluginInventoryLocaleKey): string => en[key]) as PluginInventorySettingsTabProps['t']
 
-function props(list: PluginInventorySettingsTabInjected['list']): PluginInventorySettingsTabProps {
+function props(
+  list: PluginInventorySettingsTabInjected['list'],
+  setEnabled: PluginInventorySettingsTabInjected['setEnabled'] = vi.fn(() => Promise.resolve()),
+): PluginInventorySettingsTabProps {
   return {
     t,
+    language: 'en',
     list,
+    setEnabled,
   } as PluginInventorySettingsTabProps
 }
 
@@ -123,5 +128,51 @@ describe('PluginInventorySettingsTab', () => {
     const pendingFailure = render(<PluginInventorySettingsTab {...props(() => deferredFailure.promise)} />)
     pendingFailure.unmount()
     await act(async () => { deferredFailure.reject(new Error('late failure')) })
+  })
+
+  it('toggles a plugin off, persists the choice, and re-fetches the snapshot', async () => {
+    const setEnabled = vi.fn<PluginInventorySettingsTabInjected['setEnabled']>(() => Promise.resolve())
+    let snapshot = SNAPSHOT
+    const list = vi.fn(async () => snapshot)
+    const view = render(<PluginInventorySettingsTab {...props(list, setEnabled)} />)
+    await screen.findByRole('switch', { name: 'Disable hmr' })
+
+    // Disabling flips the list to a state where hmr is off and re-fetched.
+    snapshot = { entries: SNAPSHOT.entries.map(e =>
+      e.entryId === '8a1b2c3d' ? { ...e, enabled: false, fiberPhase: null } : e,
+    ) as Snapshot['entries'] }
+    fireEvent.click(screen.getByRole('switch', { name: 'Disable hmr' }))
+
+    await waitFor(() => expect(setEnabled).toHaveBeenCalledWith('8a1b2c3d', false))
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('switch', { name: 'Enable hmr' })).toBeTruthy()
+    expect(view.container.querySelector('[data-plugin-count]')?.textContent).toBe('7')
+  })
+
+  it('keeps the plugin name visible and shows the real reason when a toggle fails', async () => {
+    const setEnabled = vi.fn<PluginInventorySettingsTabInjected['setEnabled']>(() =>
+      Promise.reject(new Error('entry include:webserver is protected and cannot be toggled')),
+    )
+    const view = render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT, setEnabled)} />)
+    await screen.findByRole('switch', { name: 'Disable hmr' })
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Disable hmr' }))
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(view.container.querySelector('[data-toggle-error]')?.textContent)
+      .toContain('protected')
+    // The failed toggle must not squeeze the plugin name out of the card head.
+    expect(screen.getByText('hmr')).toBeTruthy()
+  })
+
+  it('renders a localized capability intro under each plugin name', async () => {
+    const view = render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
+    await screen.findByText('hmr')
+    // Known module blurb (english locale in this harness).
+    expect(view.container.querySelector('[data-plugin-module="@deepseek-ai/cordis-plugin-hmr"]')?.textContent)
+      .toContain('Hot-reload')
+    // Unknown module falls back to the unlisted blurb.
+    expect(view.container.querySelector('[data-plugin-module="@fixture/failed-name"]')?.textContent)
+      .toContain('DS plugin/component')
   })
 })

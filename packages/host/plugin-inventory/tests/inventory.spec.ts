@@ -1,13 +1,26 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import PluginInventoryGateway from '../src/index.ts'
+import { PLUGIN_TOGGLES_FILENAME } from '@deepseek-ai/dsh-home-paths'
+import PluginInventoryGateway, { stripEnclosingPatchPrefix } from '../src/index.ts'
 
 const contexts: Context[] = []
+const tempHomes: string[] = []
+
+function makeHome(): string {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-inventory-'))
+  tempHomes.push(home)
+  return home
+}
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const home of tempHomes.splice(0)) rmSync(home, { recursive: true, force: true })
+  delete process.env.DSH_HOME
 })
 
 const activePlugin: Plugin.Function = () => {}
@@ -31,7 +44,7 @@ async function harness(): Promise<{
 }
 
 describe('PluginInventoryGateway', () => {
-  it('publishes one direct list method under the pluginInventory namespace', async () => {
+  it('publishes list and setEnabled under the pluginInventory namespace', async () => {
     const { inventory } = await harness()
     expect(inventory.typertRemote).toMatchObject({
       serviceKey: 'pluginInventory',
@@ -39,6 +52,7 @@ describe('PluginInventoryGateway', () => {
     })
     expect(remoteMethods(inventory)).toEqual([
       { method: 'list', invocation: { kind: 'direct' } },
+      { method: 'setEnabled', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -85,5 +99,50 @@ describe('PluginInventoryGateway', () => {
 
     await ctx.loader.remove(pendingId)
     expect(inventory.list().entries.some(entry => entry.entryId === pendingId)).toBe(false)
+  })
+
+  it('persists a disable toggle to the harness home toggle patch file', async () => {
+    const home = makeHome()
+    process.env.DSH_HOME = home
+    const { ctx, inventory } = await harness()
+    const activeId = await ctx.loader.create({ name: 'cordis:active' })
+
+    await inventory.setEnabled(activeId, false)
+
+    const togglePath = join(home, PLUGIN_TOGGLES_FILENAME)
+    expect(existsSync(togglePath)).toBe(true)
+    const rows = JSON.parse(readFileSync(togglePath, 'utf8')) as readonly { id: string; disabled: boolean }[]
+    expect(rows).toEqual([{ id: activeId, disabled: true }])
+  })
+
+  it('upserts rather than duplicates an existing toggle row', async () => {
+    const home = makeHome()
+    process.env.DSH_HOME = home
+    const { ctx, inventory } = await harness()
+    const activeId = await ctx.loader.create({ name: 'cordis:active' })
+
+    await inventory.setEnabled(activeId, false)
+    await inventory.setEnabled(activeId, true)
+
+    const togglePath = join(home, PLUGIN_TOGGLES_FILENAME)
+    const rows = JSON.parse(readFileSync(togglePath, 'utf8')) as readonly { id: string; disabled: boolean }[]
+    expect(rows).toEqual([{ id: activeId, disabled: false }])
+  })
+
+  it('rejects an unknown entry without writing a toggle row', async () => {
+    const home = makeHome()
+    process.env.DSH_HOME = home
+    const { inventory } = await harness()
+
+    await expect(inventory.setEnabled('does-not-exist', false)).rejects.toThrow(/no such/)
+    expect(existsSync(join(home, PLUGIN_TOGGLES_FILENAME))).toBe(false)
+  })
+
+  it('strips the enclosing include prefix down to the patch id', async () => {
+    expect(stripEnclosingPatchPrefix('include:session', 'include')).toBe('session')
+    expect(stripEnclosingPatchPrefix('include:compaction:tool-result-pruner', 'include'))
+      .toBe('compaction:tool-result-pruner')
+    expect(stripEnclosingPatchPrefix('session', 'include')).toBe('session')
+    expect(stripEnclosingPatchPrefix('session', undefined)).toBe('session')
   })
 })
