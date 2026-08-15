@@ -2,6 +2,8 @@ CLAUDE.local.md
 .env
 node_modules/
 lib/
+src/*.js
+src/*.js.map
 *.tsbuildinfo
 pnpm-debug.log
 .pnpm-store/

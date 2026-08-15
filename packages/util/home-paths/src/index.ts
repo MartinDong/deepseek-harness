@@ -99,6 +99,19 @@ export function dshHomePath(...segments: string[]): string {
   return join(resolveDshHome(), ...segments)
 }
 
+/** File name of the loader-toggle patch layer owned by the plugin inventory service. */
+export const PLUGIN_TOGGLES_FILENAME = 'plugin-toggles.patch.json'
+
+/**
+ * Resolve the absolute path of the plugin-toggle patch layer. It sits beside
+ * the home-level `cordis.patch.yml` so the active profile's name is irrelevant;
+ * the profile launcher composes it over every profile layer and hot-reloads it.
+ * @param home - the resolved harness home; defaults to {@link resolveDshHome}.
+ */
+export function pluginTogglesPath(home: string = resolveDshHome()): string {
+  return join(home, PLUGIN_TOGGLES_FILENAME)
+}
+
 /**
  * Describe a resolved harness home symbolically for user-facing display.
  *

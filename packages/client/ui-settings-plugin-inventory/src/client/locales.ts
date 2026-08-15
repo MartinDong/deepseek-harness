@@ -20,6 +20,14 @@ export const zh = {
   active: '已挂载',
   failed: '挂载失败',
   unloading: '卸载中',
+  enable: '启用',
+  disable: '停用',
+  toggleBusy: '切换中…',
+  toggleFailed: '切换失败。',
+  reasonProtected: '该插件受保护，不能通过列表改变它的开关状态。',
+  reasonContainer: '这是组合/容器条目，只能整体管理，不能单独开关。',
+  reasonNotFound: '找不到该插件条目，可能已被移除或配置已变化。',
+  reasonUnknown: '未能切换，具体原因：',
 } satisfies Record<string, string>
 
 /** Plugin inventory locale key union. */
@@ -45,4 +53,12 @@ export const en = {
   active: 'Mounted',
   failed: 'Mount failed',
   unloading: 'Unloading',
+  enable: 'Enable',
+  disable: 'Disable',
+  toggleBusy: 'Switching…',
+  toggleFailed: 'Switch failed.',
+  reasonProtected: 'This plugin is protected and cannot be toggled from the list.',
+  reasonContainer: 'This is a container entry that can only be managed as a whole, not toggled individually.',
+  reasonNotFound: 'The plugin entry was not found; it may have been removed or its configuration changed.',
+  reasonUnknown: 'Could not switch, reason: ',
 } satisfies Record<PluginInventoryLocaleKey, string>

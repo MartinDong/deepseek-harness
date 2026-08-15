@@ -29,7 +29,7 @@ import {
   watchUserPatches,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { pluginTogglesPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
 /** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
@@ -109,6 +109,8 @@ interface ComposedProfile {
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
   homePatches: PatchOptions[]
+  /** The gateway-owned plugin toggle layer, applied after the home layer so a UI toggle always wins. */
+  toggles: PatchOptions[]
   /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
   overlays: PatchOptions[]
   /**
@@ -124,6 +126,7 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
     ...composed.bundlePatches,
     ...composed.profile.patches,
     ...composed.homePatches,
+    ...composed.toggles,
     ...composed.overlays,
   ]
 }
@@ -145,10 +148,11 @@ function composeProfile(
 ): ComposedProfile {
   const profile = prepareProfile(name)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
+  const toggles = loadOptionalPatches(NAME, pluginTogglesPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const rows = new Map<string, EntryOptions>()
-  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
+  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, toggles, overlays])) {
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
   const composedOverlays = [...overlays]
@@ -167,7 +171,7 @@ function composeProfile(
   }
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
+  return { profile, bundlePatches, homePatches, toggles, overlays: composedOverlays, rows }
 }
 
 /** Options for {@link runProfile}. */
@@ -241,6 +245,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     ...composed.bundlePatches,
     ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
     ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+    ...loadOptionalPatches(NAME, pluginTogglesPath()) ?? [],
     ...composed.overlays,
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
@@ -290,6 +295,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       await watchUserPatches(ctx, {
         binName: NAME,
         filename: homePatchPath(),
+        compose: composeLive,
+      })
+      await watchUserPatches(ctx, {
+        binName: NAME,
+        filename: pluginTogglesPath(),
         compose: composeLive,
       })
     } catch (error) {

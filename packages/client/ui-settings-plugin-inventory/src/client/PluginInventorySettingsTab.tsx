@@ -5,6 +5,7 @@ import {
   IconSearchOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { capabilityFor } from './capabilities.ts'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import css from './PluginInventorySettingsTab.module.css'
 
@@ -12,6 +13,10 @@ import css from './PluginInventorySettingsTab.module.css'
 export interface PluginInventorySettingsTabInjected {
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
+  /** Enable or disable one Loader entry; persists the choice across restarts. */
+  setEnabled: (entryId: string, enabled: boolean) => Promise<void>
+  /** Active browser/host locale, used to pick the localized capability blurb. */
+  language: 'zh' | 'en'
 }
 
 type PluginInventoryEntry = PluginInventorySnapshot['entries'][number]
@@ -53,6 +58,19 @@ function moduleShortName(moduleName: string): string {
     .replace(/^dsh-(?:host-|client-)?/, '')
 }
 
+/**
+ * Map a Host toggle error into a localized, user-facing reason key, or
+ * `null` when the message is not a KNOWN pattern (so the raw message is
+ * shown instead). Keeps common failures (`protected`, container, missing)
+ * friendly without inventing a translation for arbitrary Loader errors.
+ */
+function toggleReasonKey(message: string): PluginInventoryLocaleKey | null {
+  if (message.toLowerCase().includes('protected')) return 'reasonProtected'
+  if (message.toLowerCase().includes('composition container')) return 'reasonContainer'
+  if (message.toLowerCase().includes('no such loader entry')) return 'reasonNotFound'
+  return null
+}
+
 /** Whether an inventory row matches the local catalog query. */
 function matches(entry: PluginInventoryEntry, normalizedQuery: string): boolean {
   if (normalizedQuery.length === 0) return true
@@ -60,13 +78,15 @@ function matches(entry: PluginInventoryEntry, normalizedQuery: string): boolean 
     .some(value => value.toLocaleLowerCase().includes(normalizedQuery))
 }
 
-/** Render the read-only current Loader inventory. */
-export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsTabProps): ReactNode {
+/** Render the loadable, mutating current Loader inventory. */
+export function PluginInventorySettingsTab({ list, setEnabled, language, t }: PluginInventorySettingsTabProps): ReactNode {
   const catalogId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<PluginInventoryEntry['entryId'] | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
+  const [busyId, setBusyId] = useState<PluginInventoryEntry['entryId'] | null>(null)
+  const [toggleError, setToggleError] = useState<{ readonly entryId: PluginInventoryEntry['entryId']; readonly message: string } | null>(null)
 
   useEffect(() => {
     let current = true
@@ -94,6 +114,30 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
   const retry = (): void => {
     setState({ status: 'loading' })
     setRequest(value => value + 1)
+  }
+
+  /** Flip one entry's enablement, refresh the snapshot, and surface failures. */
+  const toggle = (entry: PluginInventoryEntry): void => {
+    if (busyId !== null) return
+    setBusyId(entry.entryId)
+    setToggleError(null)
+    const enabled = !entry.enabled
+    void Promise.resolve()
+      .then(() => setEnabled(entry.entryId, enabled))
+      .then(() => list())
+      .then(
+        (snapshot) => {
+          setState({ status: 'ready', snapshot })
+          setBusyId(null)
+        },
+        (error: unknown) => {
+          setBusyId(null)
+          const message = error instanceof Error
+            ? error.message
+            : typeof error === 'string' ? error : 'unknown error'
+          setToggleError({ entryId: entry.entryId, message })
+        },
+      )
   }
 
   return (
@@ -141,33 +185,72 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                     data-plugin-entry={entry.entryId}
                     data-open={open ? 'true' : undefined}
                   >
-                    <button
-                      className={css.cardContent}
-                      type="button"
-                      aria-expanded={open}
-                      aria-controls={detailId}
-                      aria-label={entry.enabled ? `${title}, ${status}, ${configuration}` : `${title}, ${configuration}`}
-                      onClick={() => {
-                        setExpanded(current => current === entry.entryId ? null : entry.entryId)
-                      }}
-                    >
-                      <strong className={css.cardTitle} title={entry.moduleName}>{title}</strong>
-                      <span className={css.cardTrailing}>
-                        {entry.enabled ? (
-                          <span
-                            className={css.statusDot}
-                            data-phase={entry.fiberPhase ?? 'unobserved'}
-                            role="img"
-                            aria-label={status}
-                            title={status}
-                          />
-                        ) : null}
-                        <span className={css.configTag} data-enabled={entry.enabled ? 'true' : 'false'}>
-                          {configuration}
+                    <div className={css.cardHead}>
+                      <button
+                        className={css.cardContent}
+                        type="button"
+                        aria-expanded={open}
+                        aria-controls={detailId}
+                        aria-label={entry.enabled ? `${title}, ${status}, ${configuration}` : `${title}, ${configuration}`}
+                        onClick={() => {
+                          setExpanded(current => current === entry.entryId ? null : entry.entryId)
+                        }}
+                      >
+                        <span className={css.cardLead}>
+                          <strong className={css.cardTitle} title={entry.moduleName}>{title}</strong>
                         </span>
-                        <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                        <span className={css.cardTrailing}>
+                          {entry.enabled ? (
+                            <span
+                              className={css.statusDot}
+                              data-phase={entry.fiberPhase ?? 'unobserved'}
+                              role="img"
+                              aria-label={status}
+                              title={status}
+                            />
+                          ) : null}
+                          <span className={css.configTag} data-enabled={entry.enabled ? 'true' : 'false'}>
+                            {configuration}
+                          </span>
+                          <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                        </span>
+                      </button>
+                      <span className={css.toggle}>
+                        <button
+                          className={css.switch}
+                          type="button"
+                          role="switch"
+                          aria-checked={entry.enabled}
+                          disabled={busyId !== null}
+                          data-enabled={entry.enabled ? 'true' : 'false'}
+                          data-busy={busyId === entry.entryId ? 'true' : undefined}
+                          aria-label={`${t(entry.enabled ? 'disable' : 'enable')} ${title}`}
+                          title={entry.enabled ? t('disable') : t('enable')}
+                          onClick={() => {
+                            toggle(entry)
+                          }}
+                        >
+                          <span className={css.switchTrack} aria-hidden="true">
+                            <span className={css.switchThumb} />
+                          </span>
+                        </button>
                       </span>
-                    </button>
+                    </div>
+                    {toggleError?.entryId === entry.entryId ? (
+                      <div className={css.cardError} role="alert" data-toggle-error>
+                        <span className={css.cardErrorLabel}>{t('toggleFailed')}</span>
+                        <span className={css.cardErrorReason}>
+                          {(() => {
+                            const key = toggleReasonKey(toggleError.message)
+                            if (key !== null) return t(key)
+                            // No KNOWN pattern: preface the raw reason with a
+                            // localized shim, then keep the message so the user
+                            // can copy it back for diagnosis.
+                            return `${t('reasonUnknown')}${toggleError.message}`
+                          })()}
+                        </span>
+                      </div>
+                    ) : null}
                     {open ? (
                       <div className={css.cardDetails} id={detailId}>
                         <code className={css.entryValue} data-loader-entry>{entry.entryId}</code>
@@ -185,6 +268,9 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                         </dl>
                       </div>
                     ) : null}
+                    <div className={css.cardFooter} data-plugin-module={entry.moduleName}>
+                      {capabilityFor(entry.moduleName, language)}
+                    </div>
                   </li>
                 )
               })}
